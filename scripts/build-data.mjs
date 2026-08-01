@@ -14,45 +14,75 @@ if (!url) {
   console.error(
     'Missing EXCEL_URL. Set it as a GitHub Actions secret (Settings > ' +
     'Secrets and variables > Actions) pointing at your SharePoint ' +
-    '"anyone with the link" sharing URL with ?download=1 appended.'
+    '"anyone with the link" sharing URL with &download=1 appended.'
   );
   process.exit(1);
 }
 
-const res = await fetch(url, {
-  redirect: 'follow',
-  headers: {
+async function fetchExcelBuffer(startUrl) {
+  const headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
       '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     Accept:
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*',
-  },
-});
+  };
 
-if (!res.ok) {
-  console.error(`Download failed: HTTP ${res.status} ${res.statusText}`);
+  let currentUrl = startUrl;
+
+  for (let hop = 0; hop < 5; hop++) {
+    const res = await fetch(currentUrl, { redirect: 'follow', headers });
+
+    if (!res.ok) {
+      console.error(`Download failed: HTTP ${res.status} ${res.statusText}`);
+      process.exit(1);
+    }
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    const magic = buf.subarray(0, 4).toString('hex');
+
+    if (magic === '504b0304') {
+      return buf; // real .xlsx (ZIP signature), we're done
+    }
+
+    // Not a real file — check if this is SharePoint's client-side
+    // "Redirecting..." shell page and try to pull the real target URL out
+    // of it (it embeds the destination in a script or meta refresh tag).
+    const bodyText = buf.toString('utf8');
+    const isRedirectShell = /Redirecting/i.test(bodyText) && /<html/i.test(bodyText);
+
+    if (isRedirectShell) {
+      const match =
+        bodyText.match(/window\.location\.replace\(["']([^"']+)["']\)/i) ||
+        bodyText.match(/window\.location\.href\s*=\s*["']([^"']+)["']/i) ||
+        bodyText.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^;]+;\s*url=([^"']+)["']/i) ||
+        bodyText.match(/<a[^>]+id=["']download[^"']*["'][^>]+href=["']([^"']+)["']/i);
+
+      if (match) {
+        currentUrl = match[1].replace(/&amp;/g, '&');
+        console.log(`Following redirect (hop ${hop + 1}) to: ${currentUrl.slice(0, 100)}...`);
+        continue;
+      }
+    }
+
+    // Couldn't find a next hop — dump debug info and give up.
+    console.error(
+      'The downloaded file is not a valid .xlsx, and no redirect target ' +
+      'could be found in the response. This usually means the SharePoint ' +
+      'link is not set to "Anyone with the link can view" — check the ' +
+      'sharing settings on the Excel file.'
+    );
+    console.error(`Response content-type: ${res.headers.get('content-type')}`);
+    console.error('First 1500 bytes of response body (for debugging):');
+    console.error(bodyText.slice(0, 1500));
+    process.exit(1);
+  }
+
+  console.error('Too many redirect hops without reaching a real .xlsx file.');
   process.exit(1);
 }
 
-const buf = Buffer.from(await res.arrayBuffer());
-
-// A real .xlsx file is a ZIP archive and always starts with the bytes
-// "PK\x03\x04". If the SharePoint link isn't actually public, this request
-// silently returns an HTML login/redirect page instead — catch that early
-// with a clear error rather than writing garbage JSON.
-const magic = buf.subarray(0, 4).toString('hex');
-if (magic !== '504b0304') {
-  console.error(
-    'The downloaded file is not a valid .xlsx (got HTML/text instead). ' +
-    'This usually means the SharePoint link is not set to "Anyone with the ' +
-    'link can view" — check the sharing settings on the Excel file.'
-  );
-  console.error(`Response content-type: ${res.headers.get('content-type')}`);
-  console.error('First 300 bytes of response body (for debugging):');
-  console.error(buf.subarray(0, 300).toString('utf8'));
-  process.exit(1);
-}
+const buf = await fetchExcelBuffer(url);
 
 const workbook = XLSX.read(buf, { type: 'buffer', cellDates: true });
 const sheetName = workbook.SheetNames[0];
