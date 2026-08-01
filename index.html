@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BayadEE - Student Balance Portal</title>
+  <style>
+    :root {
+      --primary: #facc15; /* Lightning Yellow */
+      --primary-hover: #eab308;
+      --bg: #121212; /* Deep Black */
+      --card: #1e1e1e; /* Dark Gray Card */
+      --text: #ffffff; /* Crisp White Text */
+      --muted: #a3a3a3; /* Muted Slate Gray */
+      --success: #22c55e;
+      --danger: #ef4444;
+      --border: #2e2e2e;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 2rem 1rem; }
+    .container { max-width: 650px; margin: 0 auto; }
+    
+    /* Header & Logo Styles */
+    header { text-align: center; margin-bottom: 2.5rem; display: flex; flex-direction: column; align-items: center; }
+    .org-logo { width: 90px; height: 90px; object-fit: contain; margin-bottom: 1rem; border-radius: 50%; border: 2px solid var(--primary); padding: 4px; background: #000000; display: block; }
+    header h1 { color: var(--primary); font-size: 2.25rem; margin-bottom: 0.5rem; letter-spacing: 0.5px; }
+    header p { color: var(--muted); }
+
+    .search-card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 1.5rem; border: 1px solid var(--border); }
+    .form-group { display: flex; gap: 0.75rem; }
+    input { flex: 1; padding: 0.75rem 1rem; border: 1px solid var(--border); background: #181818; color: white; border-radius: 8px; font-size: 1rem; outline: none; transition: border 0.2s; }
+    input:focus { border-color: var(--primary); }
+    button { background: var(--primary); color: #000000; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: var(--primary-hover); }
+
+    .result-view { display: none; animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .profile-banner { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; background: #181818; padding: 1.25rem; border-radius: 10px; border: 1px solid var(--border); }
+    .profile-banner h2 { font-size: 1.5rem; color: #ffffff; }
+    .profile-banner p { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+    
+    .badge-balance { background: #450a0a; color: #fca5a5; padding: 0.5rem 1rem; border-radius: 20px; font-weight: bold; font-size: 1.1rem; border: 1px solid #7f1d1d; }
+    .badge-balance.clear { background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
+
+    h3 { margin-bottom: 1rem; font-size: 1.2rem; border-left: 4px solid var(--primary); padding-left: 8px; }
+    .fine-item { background: var(--card); border: 1px solid var(--border); padding: 1.25rem; border-radius: 10px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .fine-info h4 { font-size: 1.1rem; margin-bottom: 0.25rem; color: #ffffff; }
+    .fine-info p { color: var(--muted); font-size: 0.85rem; }
+    
+    .status-tag { padding: 0.25rem 0.75rem; border-radius: 6px; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; }
+    .status-tag.unpaid { background: #450a0a; color: #ef4444; }
+    .status-tag.paid { background: #064e3b; color: #22c55e; }
+
+    .error-msg { color: #f87171; background: #450a0a; padding: 1rem; border-radius: 8px; border: 1px solid #7f1d1d; text-align: center; display: none; }
+    .loading { text-align: center; color: var(--primary); display: none; padding: 2rem; font-weight: 600; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <!-- 🖼️ PLACE YOUR LOGO LINK IN THE SRC ATTRIBUTE BELOW -->
+    <img class="org-logo" src="https://via.placeholder.com/150" alt="EE Org Logo">
+    <h1>BayadEE Portal</h1>
+    <p>Electrical Engineering Student Financial & Clearance Tracker</p>
+  </header>
+
+  <!-- Search UI Box -->
+  <div class="search-card">
+    <div class="form-group">
+      <input type="text" id="studentIdInput" placeholder="Enter Student ID (e.g., 2023-4779)" autocomplete="off">
+      <button onclick="searchStudent()">SEARCH</button>
+    </div>
+  </div>
+
+  <!-- Dynamic Views -->
+  <div id="loadingState" class="loading">⚡ CONNECTING TO THE GRID...</div>
+  <div id="errorState" class="error-msg"></div>
+
+  <div id="resultState" class="result-view">
+    <div class="profile-banner">
+      <div>
+        <h2 id="studentName">Student Name</h2>
+        <p id="studentMetadata">Course/Year Info</p>
+        <p id="studentEmail" style="color: var(--primary)"></p>
+      </div>
+      <div id="outstandingBalance" class="badge-balance">₱0.00</div>
+    </div>
+
+    <h3>Fines & Attendance Breakdown</h3>
+    <div id="finesContainer" style="margin-top: 1rem;">
+      <!-- Dynamic fine items will be injected here -->
+    </div>
+  </div>
+</div>
+
+<script>
+  const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbyOoB2Zl_sbNLO2SjiRt3m1lSJdSOszz5h2fVHBUTmOVLJrADwX_DccY77YLvb3zws/exec';
+  
+  async function searchStudent() {
+    const studentId = document.getElementById('studentIdInput').value.trim();
+    const loadingState = document.getElementById('loadingState');
+    const errorState = document.getElementById('errorState');
+    const resultState = document.getElementById('resultState');
+    const finesContainer = document.getElementById('finesContainer');
+
+    if (!studentId) return alert('Please key in a Student ID first.');
+
+    // Reset View State
+    loadingState.style.display = 'block';
+    errorState.style.display = 'none';
+    resultState.style.display = 'none';
+    finesContainer.innerHTML = '';
+
+    try {
+      const response = await fetch(`${API_BASE_URL}?id=${encodeURIComponent(studentId)}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Server error encountered.');
+      }
+
+      // Populate Student Data Banner
+      document.getElementById('studentName').innerText = data.student.name;
+      document.getElementById('studentMetadata').innerText = `${data.student.id} • ${data.student.yearLevel}`;
+      document.getElementById('studentEmail').innerText = data.student.email;
+      
+      const balanceBadge = document.getElementById('outstandingBalance');
+      balanceBadge.innerText = data.summary.pendingAmount;
+      
+      if(parseFloat(data.summary.pendingAmount.replace(/[^\d.]/g, '')) === 0) {
+        balanceBadge.classList.add('clear');
+        balanceBadge.innerText = "Cleared";
+      } else {
+        balanceBadge.classList.remove('clear');
+      }
+
+      // Populate Ledger Fines List
+      if (data.fines.length === 0) {
+        finesContainer.innerHTML = `<p style="color: var(--muted); text-align:center; padding: 2rem;">No fine records recorded for this account.</p>`;
+      } else {
+        data.fines.forEach(fine => {
+          const item = document.createElement('div');
+          item.className = 'fine-item';
+          item.innerHTML = `
+            <div class="fine-info">
+              <h4>${fine.eventName}</h4>
+              <p>Date: ${fine.eventDate} • Status: <strong>${fine.attendanceStatus}</strong></p>
+              <p style="margin-top:4px; font-weight:600; color: var(--primary)">Owes: ${fine.amountOwed}</p>
+            </div>
+            <div>
+              <span class="status-tag ${fine.paymentStatus.toLowerCase()}">${fine.paymentStatus}</span>
+            </div>
+          `;
+          finesContainer.appendChild(item);
+        });
+      }
+
+      resultState.style.display = 'block';
+    } catch (err) {
+      errorState.innerText = err.message;
+      errorState.style.display = 'block';
+    } finally {
+      loadingState.style.display = 'none';
+    }
+  }
+</script>
+</body>
+</html>
